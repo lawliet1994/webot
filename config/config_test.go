@@ -96,6 +96,7 @@ func TestDefaultConfigInitializesAgentsMap(t *testing.T) {
 func TestLoadEnvOverridesTopLevelOnly(t *testing.T) {
 	t.Setenv("WECLAW_DEFAULT_AGENT", "codex")
 	t.Setenv("WECLAW_API_ADDR", "127.0.0.1:18011")
+	t.Setenv("WECLAW_REPLY_ENDPOINT", "http://127.0.0.1:8000/chat")
 
 	cfg := DefaultConfig()
 	cfg.Agents["claude"] = AgentConfig{
@@ -112,6 +113,9 @@ func TestLoadEnvOverridesTopLevelOnly(t *testing.T) {
 	}
 	if cfg.APIAddr != "127.0.0.1:18011" {
 		t.Fatalf("APIAddr = %q, want %q", cfg.APIAddr, "127.0.0.1:18011")
+	}
+	if cfg.ReplyEndpoint != "http://127.0.0.1:8000/chat" {
+		t.Fatalf("ReplyEndpoint = %q, want %q", cfg.ReplyEndpoint, "http://127.0.0.1:8000/chat")
 	}
 	if got := cfg.Agents["claude"].Env["KEEP"]; got != "value" {
 		t.Fatalf("agent env = %q, want preserved value", got)

@@ -159,6 +159,7 @@ curl -X POST http://127.0.0.1:18011/api/send \
 ```json
 {
   "default_agent": "claude",
+  "reply_endpoint": "http://127.0.0.1:8000/chat",
   "agents": {
     "claude": {
       "type": "acp",
@@ -188,8 +189,42 @@ curl -X POST http://127.0.0.1:18011/api/send \
 环境变量：
 
 - `WECLAW_DEFAULT_AGENT` — 覆盖默认 Agent
+- `WECLAW_REPLY_ENDPOINT` — 收到微信消息后调用的本地 HTTP 回复地址
 - `OPENCLAW_GATEWAY_URL` — OpenClaw HTTP 回退地址
 - `OPENCLAW_GATEWAY_TOKEN` — OpenClaw API Token
+
+收到消息后的回复会转发到本地 HTTP 端点。默认请求 `http://127.0.0.1:8000/chat`。
+
+请求体：
+
+```json
+{
+  "message": "hello",
+  "user_id": "user_id@im.wechat"
+}
+```
+
+文件消息请求体：
+
+```json
+{
+  "user_id": "user_id@im.wechat",
+  "file": {
+    "name": "report.xlsx",
+    "size": "1234",
+    "encrypt_query_param": "encrypted-query-param",
+    "aes_key": "base64-aes-key"
+  }
+}
+```
+
+响应体：
+
+```json
+{
+  "reply": "hello from local server"
+}
+```
 
 自定义 agent cli 环境变量
 

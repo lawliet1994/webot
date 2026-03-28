@@ -1,9 +1,13 @@
 package messaging
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,9 +42,24 @@ type Handler struct {
 	customAliases map[string]string      // custom alias -> agent name (from config)
 	factory       AgentFactory
 	saveDefault   SaveDefaultFunc
-	contextTokens sync.Map   // map[userID]contextToken
-	saveDir       string     // directory to save images/files to
-	seenMsgs      sync.Map   // map[int64]time.Time — dedup by message_id
+	replyEndpoint string
+	httpClient    *http.Client
+	contextTokens sync.Map // map[userID]contextToken
+	saveDir       string   // directory to save images/files to
+	seenMsgs      sync.Map // map[int64]time.Time — dedup by message_id
+}
+
+type localReplyFile struct {
+	Name              string `json:"name,omitempty"`
+	Size              string `json:"size,omitempty"`
+	EncryptQueryParam string `json:"encrypt_query_param,omitempty"`
+	AESKey            string `json:"aes_key,omitempty"`
+}
+
+type localReplyRequest struct {
+	Message string          `json:"message,omitempty"`
+	UserID  string          `json:"user_id"`
+	File    *localReplyFile `json:"file,omitempty"`
 }
 
 // NewHandler creates a new message handler.
@@ -49,7 +68,15 @@ func NewHandler(factory AgentFactory, saveDefault SaveDefaultFunc) *Handler {
 		agents:      make(map[string]agent.Agent),
 		factory:     factory,
 		saveDefault: saveDefault,
+		httpClient:  &http.Client{Timeout: 60 * time.Second},
 	}
+}
+
+// SetReplyEndpoint sets the local HTTP endpoint used to generate replies.
+func (h *Handler) SetReplyEndpoint(endpoint string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.replyEndpoint = strings.TrimSpace(endpoint)
 }
 
 // SetSaveDir sets the directory for saving images and files.
@@ -273,6 +300,10 @@ func (h *Handler) HandleMessage(ctx context.Context, client *ilink.Client, msg i
 		}
 	}
 	if text == "" {
+		if file := extractFile(msg); file != nil {
+			h.handleFileMessage(ctx, client, msg, file)
+			return
+		}
 		// Check for image message
 		if img := extractImage(msg); img != nil && h.saveDir != "" {
 			h.handleImageSave(ctx, client, msg, img)
@@ -488,6 +519,36 @@ func (h *Handler) sendReplyWithMedia(ctx context.Context, client *ilink.Client, 
 
 // chatWithAgent sends a message to an agent and returns the reply, with logging.
 func (h *Handler) chatWithAgent(ctx context.Context, ag agent.Agent, userID, message string) (string, error) {
+	h.mu.RLock()
+	replyEndpoint := h.replyEndpoint
+	httpClient := h.httpClient
+	h.mu.RUnlock()
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 60 * time.Second}
+	}
+
+	if replyEndpoint != "" {
+		log.Printf("[handler] dispatching to local reply endpoint (%s) for %s", replyEndpoint, userID)
+
+		start := time.Now()
+		reply, err := h.fetchReply(ctx, httpClient, replyEndpoint, localReplyRequest{
+			Message: message,
+			UserID:  userID,
+		})
+		elapsed := time.Since(start)
+		if err != nil {
+			log.Printf("[handler] local reply endpoint error (%s, elapsed=%s): %v", replyEndpoint, elapsed, err)
+			return "", err
+		}
+
+		log.Printf("[handler] local reply endpoint replied (%s, elapsed=%s): %q", replyEndpoint, elapsed, truncate(reply, 100))
+		return reply, nil
+	}
+
+	if ag == nil {
+		return "", fmt.Errorf("no agent configured")
+	}
+
 	info := ag.Info()
 	log.Printf("[handler] dispatching to agent (%s) for %s", info, userID)
 
@@ -502,6 +563,92 @@ func (h *Handler) chatWithAgent(ctx context.Context, ag agent.Agent, userID, mes
 
 	log.Printf("[handler] agent replied (%s, elapsed=%s): %q", info, elapsed, truncate(reply, 100))
 	return reply, nil
+}
+
+func (h *Handler) fetchReply(ctx context.Context, httpClient *http.Client, endpoint string, reqBody localReplyRequest) (string, error) {
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 60 * time.Second}
+	}
+
+	data, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(data))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("HTTP request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("reply endpoint HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	var result struct {
+		Reply string `json:"reply"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("parse response: %w", err)
+	}
+	if strings.TrimSpace(result.Reply) == "" {
+		return "", fmt.Errorf("empty reply in response")
+	}
+
+	return result.Reply, nil
+}
+
+func (h *Handler) handleFileMessage(ctx context.Context, client *ilink.Client, msg ilink.WeixinMessage, file *ilink.FileItem) {
+	clientID := NewClientID()
+
+	h.mu.RLock()
+	replyEndpoint := h.replyEndpoint
+	httpClient := h.httpClient
+	h.mu.RUnlock()
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 60 * time.Second}
+	}
+	if replyEndpoint == "" {
+		log.Printf("[handler] received file from %s but no reply endpoint is configured", msg.FromUserID)
+		return
+	}
+
+	log.Printf("[handler] received file from %s: %s", msg.FromUserID, file.FileName)
+
+	go func() {
+		if typingErr := SendTypingState(ctx, client, msg.FromUserID, msg.ContextToken); typingErr != nil {
+			log.Printf("[handler] failed to send typing state: %v", typingErr)
+		}
+	}()
+
+	reqFile := &localReplyFile{
+		Name: file.FileName,
+		Size: file.Len,
+	}
+	if file.Media != nil {
+		reqFile.EncryptQueryParam = file.Media.EncryptQueryParam
+		reqFile.AESKey = file.Media.AESKey
+	}
+
+	reply, err := h.fetchReply(ctx, httpClient, replyEndpoint, localReplyRequest{
+		UserID: msg.FromUserID,
+		File:   reqFile,
+	})
+	if err != nil {
+		reply = fmt.Sprintf("Error: %v", err)
+	}
+	h.sendReplyWithMedia(ctx, client, msg, reply, clientID)
 }
 
 // switchDefault switches the default agent. Starts it on demand if needed.
@@ -652,6 +799,15 @@ func extractImage(msg ilink.WeixinMessage) *ilink.ImageItem {
 	for _, item := range msg.ItemList {
 		if item.Type == ilink.ItemTypeImage && item.ImageItem != nil {
 			return item.ImageItem
+		}
+	}
+	return nil
+}
+
+func extractFile(msg ilink.WeixinMessage) *ilink.FileItem {
+	for _, item := range msg.ItemList {
+		if item.Type == ilink.ItemTypeFile && item.FileItem != nil {
+			return item.FileItem
 		}
 	}
 	return nil

@@ -158,6 +158,7 @@ Config file: `~/.weclaw/config.json`
 ```json
 {
   "default_agent": "claude",
+  "reply_endpoint": "http://127.0.0.1:8000/chat",
   "agents": {
     "claude": {
       "type": "acp",
@@ -186,8 +187,42 @@ Config file: `~/.weclaw/config.json`
 
 Environment variables:
 - `WECLAW_DEFAULT_AGENT` — override default agent
+- `WECLAW_REPLY_ENDPOINT` — local HTTP endpoint used for incoming message replies
 - `OPENCLAW_GATEWAY_URL` — OpenClaw HTTP fallback endpoint
 - `OPENCLAW_GATEWAY_TOKEN` — OpenClaw API token
+
+Incoming messages are replied to through the local HTTP endpoint. By default WeClaw posts to `http://127.0.0.1:8000/chat`.
+
+Request:
+
+```json
+{
+  "message": "hello",
+  "user_id": "user_id@im.wechat"
+}
+```
+
+File message request:
+
+```json
+{
+  "user_id": "user_id@im.wechat",
+  "file": {
+    "name": "report.xlsx",
+    "size": "1234",
+    "encrypt_query_param": "encrypted-query-param",
+    "aes_key": "base64-aes-key"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "reply": "hello from local server"
+}
+```
 
 Custom agent CLI environment variables:
 
