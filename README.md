@@ -187,11 +187,12 @@ Config file: `~/.weclaw/config.json`
 
 Environment variables:
 - `WECLAW_DEFAULT_AGENT` — override default agent
-- `WECLAW_REPLY_ENDPOINT` — local HTTP endpoint used for incoming message replies
+- `WECLAW_REPLY_ENDPOINT` — enable local HTTP replies for incoming messages, e.g. `http://127.0.0.1:8000/chat`
 - `OPENCLAW_GATEWAY_URL` — OpenClaw HTTP fallback endpoint
 - `OPENCLAW_GATEWAY_TOKEN` — OpenClaw API token
 
-Incoming messages are replied to through the local HTTP endpoint. By default WeClaw posts to `http://127.0.0.1:8000/chat`.
+By default WeClaw uses the configured agents for replies. Set `WECLAW_REPLY_ENDPOINT=http://127.0.0.1:8000/chat` to switch incoming messages to a local HTTP endpoint instead.
+When a `.env` file exists in the project root, WeClaw loads it automatically at startup.
 
 Request:
 

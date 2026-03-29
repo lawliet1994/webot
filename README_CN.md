@@ -189,11 +189,12 @@ curl -X POST http://127.0.0.1:18011/api/send \
 环境变量：
 
 - `WECLAW_DEFAULT_AGENT` — 覆盖默认 Agent
-- `WECLAW_REPLY_ENDPOINT` — 收到微信消息后调用的本地 HTTP 回复地址
+- `WECLAW_REPLY_ENDPOINT` — 启用本地 HTTP 回复地址，例如 `http://127.0.0.1:8000/chat`
 - `OPENCLAW_GATEWAY_URL` — OpenClaw HTTP 回退地址
 - `OPENCLAW_GATEWAY_TOKEN` — OpenClaw API Token
 
-收到消息后的回复会转发到本地 HTTP 端点。默认请求 `http://127.0.0.1:8000/chat`。
+默认仍然走已配置的 agent 回复。只有设置 `WECLAW_REPLY_ENDPOINT=http://127.0.0.1:8000/chat` 后，收到的消息才会转发到本地 HTTP 端点。
+如果项目根目录存在 `.env` 文件，WeClaw 启动时会自动加载。
 
 请求体：
 

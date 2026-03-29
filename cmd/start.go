@@ -107,12 +107,12 @@ func runStart(cmd *cobra.Command, args []string) error {
 			return config.Save(cfg)
 		},
 	)
-	replyEndpoint := cfg.ReplyEndpoint
-	if replyEndpoint == "" {
-		replyEndpoint = "http://127.0.0.1:8000/chat"
+	if cfg.ReplyEndpoint != "" {
+		handler.SetReplyEndpoint(cfg.ReplyEndpoint)
+		log.Printf("Reply endpoint enabled: %s", cfg.ReplyEndpoint)
+	} else {
+		log.Printf("Reply endpoint disabled; using configured agents")
 	}
-	handler.SetReplyEndpoint(replyEndpoint)
-	log.Printf("Reply endpoint: %s", replyEndpoint)
 
 	// Populate agent metas for /status
 	var metas []messaging.AgentMeta

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/fastclaw-ai/weclaw/config"
 	"github.com/spf13/cobra"
 )
 
@@ -20,6 +21,10 @@ var rootCmd = &cobra.Command{
 
 // Execute runs the root command.
 func Execute() {
+	if err := config.LoadDotEnv(".env"); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

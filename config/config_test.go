@@ -2,6 +2,8 @@ package config
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -119,5 +121,44 @@ func TestLoadEnvOverridesTopLevelOnly(t *testing.T) {
 	}
 	if got := cfg.Agents["claude"].Env["KEEP"]; got != "value" {
 		t.Fatalf("agent env = %q, want preserved value", got)
+	}
+}
+
+func TestLoadDotEnvSetsMissingVars(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.WriteFile(path, []byte("WECLAW_REPLY_ENDPOINT=http://127.0.0.1:8000/chat\n"), 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+
+	t.Setenv("WECLAW_REPLY_ENDPOINT", "")
+	if err := os.Unsetenv("WECLAW_REPLY_ENDPOINT"); err != nil {
+		t.Fatalf("unset env: %v", err)
+	}
+
+	if err := LoadDotEnv(path); err != nil {
+		t.Fatalf("LoadDotEnv() error = %v", err)
+	}
+
+	if got := os.Getenv("WECLAW_REPLY_ENDPOINT"); got != "http://127.0.0.1:8000/chat" {
+		t.Fatalf("WECLAW_REPLY_ENDPOINT = %q, want %q", got, "http://127.0.0.1:8000/chat")
+	}
+}
+
+func TestLoadDotEnvDoesNotOverrideExistingVars(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	if err := os.WriteFile(path, []byte("WECLAW_REPLY_ENDPOINT=http://127.0.0.1:8000/chat\n"), 0o600); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+
+	t.Setenv("WECLAW_REPLY_ENDPOINT", "http://127.0.0.1:9000/chat")
+
+	if err := LoadDotEnv(path); err != nil {
+		t.Fatalf("LoadDotEnv() error = %v", err)
+	}
+
+	if got := os.Getenv("WECLAW_REPLY_ENDPOINT"); got != "http://127.0.0.1:9000/chat" {
+		t.Fatalf("WECLAW_REPLY_ENDPOINT = %q, want %q", got, "http://127.0.0.1:9000/chat")
 	}
 }
