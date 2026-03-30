@@ -55,6 +55,34 @@ func TestFilenameFromURL_WithQuery(t *testing.T) {
 	}
 }
 
+func TestFilenameFromPath(t *testing.T) {
+	got := filenameFromPath("/tmp/reports/annual.pdf")
+	if got != "annual.pdf" {
+		t.Errorf("got %q, want %q", got, "annual.pdf")
+	}
+}
+
+func TestDetectLocalContentType_UsesSniffedImageTypeWhenPathHasNoExtension(t *testing.T) {
+	pngHeader := []byte{
+		0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n',
+		0x00, 0x00, 0x00, 0x0d, 'I', 'H', 'D', 'R',
+	}
+
+	got := detectLocalContentType(pngHeader, "/tmp/uploaded-image")
+	if got != "image/png" {
+		t.Fatalf("detectLocalContentType() = %q, want %q", got, "image/png")
+	}
+}
+
+func TestDetectLocalContentType_PrefersPathExtensionWhenSniffIsGeneric(t *testing.T) {
+	data := []byte("plain text that does not look like a png file")
+
+	got := detectLocalContentType(data, "/tmp/report.pdf")
+	if got != "application/pdf" {
+		t.Fatalf("detectLocalContentType() = %q, want %q", got, "application/pdf")
+	}
+}
+
 func TestStripQuery(t *testing.T) {
 	tests := []struct {
 		input string

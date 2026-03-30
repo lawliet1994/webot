@@ -7,6 +7,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -33,31 +34,41 @@ func ExtractImageURLs(text string) []string {
 
 // SendMediaFromURL downloads a file from a URL and sends it as a media message.
 func SendMediaFromURL(ctx context.Context, client *ilink.Client, toUserID, mediaURL, contextToken string) error {
-	// Download the file
 	data, contentType, err := downloadFile(ctx, mediaURL)
 	if err != nil {
 		return fmt.Errorf("download %s: %w", mediaURL, err)
 	}
 
-	// Determine media type and item type
-	cdnMediaType, itemType := classifyMedia(contentType, mediaURL)
+	return sendMedia(ctx, client, toUserID, data, contentType, filenameFromURL(mediaURL), mediaURL, contextToken)
+}
 
-	log.Printf("[media] uploading %s (%s, %d bytes) for %s", mediaURL, contentType, len(data), toUserID)
+// SendMediaFromPath reads a local file and sends it as a media message.
+func SendMediaFromPath(ctx context.Context, client *ilink.Client, toUserID, mediaPath, contextToken string) error {
+	data, err := os.ReadFile(mediaPath)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", mediaPath, err)
+	}
 
-	// Upload to CDN
+	contentType := detectLocalContentType(data, mediaPath)
+	return sendMedia(ctx, client, toUserID, data, contentType, filenameFromPath(mediaPath), mediaPath, contextToken)
+}
+
+func sendMedia(ctx context.Context, client *ilink.Client, toUserID string, data []byte, contentType, fileName, source, contextToken string) error {
+	cdnMediaType, itemType := classifyMedia(contentType, fileName)
+
+	log.Printf("[media] uploading %s (%s, item_type=%d, %d bytes) for %s", source, contentType, itemType, len(data), toUserID)
+
 	uploaded, err := UploadFileToCDN(ctx, client, data, toUserID, cdnMediaType)
 	if err != nil {
 		return fmt.Errorf("upload to CDN: %w", err)
 	}
 
-	// Build media info
 	media := &ilink.MediaInfo{
 		EncryptQueryParam: uploaded.DownloadParam,
 		AESKey:            AESKeyToBase64(uploaded.AESKeyHex),
 		EncryptType:       1,
 	}
 
-	// Build message item based on type
 	var item ilink.MessageItem
 	switch itemType {
 	case ilink.ItemTypeImage:
@@ -77,7 +88,6 @@ func SendMediaFromURL(ctx context.Context, client *ilink.Client, toUserID, media
 			},
 		}
 	default:
-		fileName := filenameFromURL(mediaURL)
 		item = ilink.MessageItem{
 			Type: ilink.ItemTypeFile,
 			FileItem: &ilink.FileItem{
@@ -88,7 +98,6 @@ func SendMediaFromURL(ctx context.Context, client *ilink.Client, toUserID, media
 		}
 	}
 
-	// Send the media message
 	req := &ilink.SendMessageRequest{
 		Msg: ilink.SendMsg{
 			FromUserID:   client.BotID(),
@@ -110,7 +119,7 @@ func SendMediaFromURL(ctx context.Context, client *ilink.Client, toUserID, media
 		return fmt.Errorf("send media failed: ret=%d errmsg=%s", resp.Ret, resp.ErrMsg)
 	}
 
-	log.Printf("[media] sent %s to %s", contentType, toUserID)
+	log.Printf("[media] sent %s from %s to %s", contentType, source, toUserID)
 	return nil
 }
 
@@ -184,9 +193,30 @@ func inferContentType(url string) string {
 	return "application/octet-stream"
 }
 
+func detectLocalContentType(data []byte, path string) string {
+	sniffed := http.DetectContentType(data)
+	inferred := inferContentType(path)
+
+	if sniffed != "" && sniffed != "application/octet-stream" {
+		if inferred == "application/octet-stream" || strings.HasPrefix(sniffed, "image/") || strings.HasPrefix(sniffed, "video/") {
+			return sniffed
+		}
+	}
+
+	return inferred
+}
+
 func filenameFromURL(rawURL string) string {
 	u := stripQuery(rawURL)
 	name := filepath.Base(u)
+	if name == "" || name == "." || name == "/" {
+		return "file"
+	}
+	return name
+}
+
+func filenameFromPath(path string) string {
+	name := filepath.Base(path)
 	if name == "" || name == "." || name == "/" {
 		return "file"
 	}

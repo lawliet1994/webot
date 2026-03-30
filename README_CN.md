@@ -142,6 +142,11 @@ curl -X POST http://127.0.0.1:18011/api/send \
   -H "Content-Type: application/json" \
   -d '{"to": "user_id@im.wechat", "media_url": "https://example.com/photo.png"}'
 
+# 发送服务端本地文件
+curl -X POST http://127.0.0.1:18011/api/send \
+  -H "Content-Type: application/json" \
+  -d '{"to": "user_id@im.wechat", "media_path": "/tmp/photo.png"}'
+
 # 发送文本 + 媒体
 curl -X POST http://127.0.0.1:18011/api/send \
   -H "Content-Type: application/json" \

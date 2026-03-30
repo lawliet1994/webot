@@ -27,9 +27,10 @@ func NewServer(clients []*ilink.Client, addr string) *Server {
 
 // SendRequest is the JSON body for POST /api/send.
 type SendRequest struct {
-	To       string `json:"to"`
-	Text     string `json:"text,omitempty"`
-	MediaURL string `json:"media_url,omitempty"` // image/video/file URL
+	To        string `json:"to"`
+	Text      string `json:"text,omitempty"`
+	MediaURL  string `json:"media_url,omitempty"`  // image/video/file URL
+	MediaPath string `json:"media_path,omitempty"` // local image/video/file path on the server machine
 }
 
 // Run starts the HTTP server. Blocks until ctx is cancelled.
@@ -71,8 +72,8 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `"to" is required`, http.StatusBadRequest)
 		return
 	}
-	if req.Text == "" && req.MediaURL == "" {
-		http.Error(w, `"text" or "media_url" is required`, http.StatusBadRequest)
+	if req.Text == "" && req.MediaURL == "" && req.MediaPath == "" {
+		http.Error(w, `"text", "media_url", or "media_path" is required`, http.StatusBadRequest)
 		return
 	}
 
@@ -112,6 +113,15 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		log.Printf("[api] sent media to %s: %s", req.To, req.MediaURL)
+	}
+
+	if req.MediaPath != "" {
+		if err := messaging.SendMediaFromPath(ctx, client, req.To, req.MediaPath, ""); err != nil {
+			log.Printf("[api] send local media failed: %v", err)
+			http.Error(w, "send local media failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Printf("[api] sent local media to %s: %s", req.To, req.MediaPath)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
