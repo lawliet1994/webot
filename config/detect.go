@@ -106,6 +106,7 @@ func DetectAndConfigure(cfg *Config) bool {
 				Endpoint: endpoint,
 				APIKey:   gwToken,
 				Model:    "openclaw:main",
+				Headers:  map[string]string{"x-openclaw-scopes": "operator.write"},
 			}
 			modified = true
 
@@ -146,6 +147,7 @@ func DetectAndConfigure(cfg *Config) bool {
 				Endpoint: endpoint,
 				APIKey:   gwToken,
 				Model:    "openclaw:main",
+				Headers:  map[string]string{"x-openclaw-scopes": "operator.write"},
 			}
 			modified = true
 		}
