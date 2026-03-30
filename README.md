@@ -5,6 +5,34 @@
 
 微信 AI Agent 桥接器 — 将微信消息接入 AI Agent（Claude、Codex、Gemini、Kimi 等）,本项目实现 Fastapi 伪装的 Agent 接口，让你拥有货真价实的 Wechat Bot。
 
+参考示例 Fastapi 接口
+
+``` python
+from fastapi import FastAPI,Request
+import logging
+
+# 配合 uvicorn 规范的日志系统，将日志输出到文件中
+logger = logging.getLogger("uvicorn.error")
+file_handler = logging.FileHandler("app.log")
+formatter = logging.Formatter(
+    "%(asctime)s | %(levelname)s | %(message)s"
+)
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
+app = FastAPI()
+@app.post("/chat")
+async def read_root(r:Request):
+    req = await r.json()
+    logger.info(f"Received request:{r.client.host} from user_id:{r.client.host} - {req.get('user_id')}")
+    logger.info(f"Message : {req.get('message')}")
+    return {"reply": "hello World"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+```
+
 以下是源项目`文档`
 
 > 本项目参考 [@tencent-weixin/openclaw-weixin](https://npmx.dev/package/@tencent-weixin/openclaw-weixin) 实现，仅限个人学习，勿做他用。
